@@ -1,0 +1,7 @@
+*.user
+*.suo
+[Db]ebug/
+[Rr]elease/
+[Pp]ackages/
+bin/
+obj/
