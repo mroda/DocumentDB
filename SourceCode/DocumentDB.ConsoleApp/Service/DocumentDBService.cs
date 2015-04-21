@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.Documents.Linq;
+using DocumentDB.ConsoleApp.Model;
 
 namespace DocumentDB.ConsoleApp.Service
 {
@@ -19,17 +20,7 @@ namespace DocumentDB.ConsoleApp.Service
 
         private static DocumentClient client;
         public DocumentDBService() { }
-
-        public static async Task Start()
-        {
-            using (client = new DocumentClient(new Uri(documentDBEndpointUrl), documentDBAuthorizationKey))
-            {
-                Database database = await GetOrCreateDatabaseAsync(databaseId);
-
-                DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, collectionId);
-            };
-        }
-
+        
         private static async Task<Database> GetOrCreateDatabaseAsync(string id)
         {
             Database database = client.CreateDatabaseQuery().Where(db => db.Id == id).ToArray().FirstOrDefault();
@@ -52,5 +43,70 @@ namespace DocumentDB.ConsoleApp.Service
             return collection;
         }
 
+
+        internal static async Task SaveToDocumentDB(List<ARMTemplateFile> templates)
+        {
+            using (client = new DocumentClient(new Uri(documentDBEndpointUrl), documentDBAuthorizationKey))
+            {
+                Database database = await GetOrCreateDatabaseAsync(databaseId);
+                DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, collectionId);
+
+                foreach (ARMTemplateFile template in templates)
+                {
+                    try
+                    {
+                        dynamic doc = client.CreateDocumentQuery<Document>(collection.DocumentsLink)
+                            .Where(d => d.Id == template.Id).AsEnumerable()
+                            .FirstOrDefault();
+
+                        Console.ForegroundColor = ConsoleColor.Gray;
+                        Console.Write("Saving fileID '{0}'... ", template.Id);
+
+                        if (doc == null)
+                        {
+                            //Save a new document 
+                            await client.CreateDocumentAsync(collection.DocumentsLink, template);
+                        }
+                        else
+                        {
+                            //Update exist document
+                            await client.ReplaceDocumentAsync(doc.SelfLink, template);
+                        }
+
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine("Done!");
+                    }
+                    catch (Exception ex)
+                    {
+                        var baseError = ex.GetBaseException();
+
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("Error!");
+                        Console.WriteLine("{0}. Message: {1}", ex.Message, baseError.Message);
+                    }
+                };
+
+                //templates.ForEach(async t =>
+                //    {
+                //        try
+                //        {
+                //            Console.ForegroundColor= ConsoleColor.Gray;
+                //            Console.Write("Saving fileID '{0}'... ", t.Id);
+                //            Document created = await client.CreateDocumentAsync(collection.DocumentsLink, t);
+                //            Console.ForegroundColor= ConsoleColor.Green;
+                //            Console.WriteLine("Done!");
+                //        }
+                //        catch (Exception ex)
+                //        {
+                //            var baseError = ex.GetBaseException();
+
+                //            Console.ForegroundColor = ConsoleColor.Red;
+                //            Console.WriteLine("Error!");
+                //            Console.WriteLine("{0}. Message: {1}", ex.Message, baseError.Message);
+                //        }
+
+                //    });
+            };
+        }
     }
 }

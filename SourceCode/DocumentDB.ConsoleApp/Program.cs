@@ -12,12 +12,13 @@ namespace DocumentDB.ConsoleApp
         {
             try
             {
-                Service.GithubService.GetTemplatesFoldersAsync().Wait();
-                //Service.DocumentDBService.GetStart().Wait();
+                var templates = Service.GithubService.GetTemplatesFoldersAsync().Result;
+                Service.DocumentDBService.SaveToDocumentDB(templates).Wait();
             }
             catch (Exception ex)
             {
                 var baseEx = ex.GetBaseException();
+                Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Error: {0}, Message: {1}", ex.Message, baseEx.Message);
             }
 
