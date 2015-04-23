@@ -21,6 +21,6 @@ namespace DocumentDB.ConsoleApp.Model
 
         public string Encode { get; set; }
 
-        public Object FileContent { get; set; }
+        public object FileContent { get; set; }
     }
 }

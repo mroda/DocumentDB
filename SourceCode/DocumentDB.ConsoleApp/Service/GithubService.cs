@@ -1,7 +1,4 @@
-﻿using DocumentDB.ConsoleApp.Model;
-using Newtonsoft.Json.Linq;
-using Octokit;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
@@ -9,17 +6,21 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using DocumentDB.ConsoleApp.Model;
+using Newtonsoft.Json.Linq;
+using Octokit;
 
 namespace DocumentDB.ConsoleApp.Service
 {
     public static class GithubService
     {
-        private static readonly string gitUserName = ConfigurationManager.AppSettings["githubUsername"];
-        private static readonly string password = ConfigurationManager.AppSettings["githubPassword"];
-        private static readonly string repoOwner = ConfigurationManager.AppSettings["githubRepoOwner"];
-        private static readonly string repoName = ConfigurationManager.AppSettings["githubRepoName"];
+        private static readonly string GitUserName = ConfigurationManager.AppSettings["githubUsername"];
+        private static readonly string Password = ConfigurationManager.AppSettings["githubPassword"];
+        private static readonly string RepoOwner = ConfigurationManager.AppSettings["githubRepoOwner"];
+        private static readonly string RepoName = ConfigurationManager.AppSettings["githubRepoName"];
 
         private static GitHubClient githubClient = null;
+
         private static GitHubClient Client
         {
             get
@@ -28,7 +29,7 @@ namespace DocumentDB.ConsoleApp.Service
                 {
                     githubClient = new GitHubClient(new ProductHeaderValue("console-gitHub-documentDB"), new Uri("https://github.com/"))
                     {
-                        Credentials = new Credentials(gitUserName, password)
+                        Credentials = new Credentials(GitUserName, Password)
                     };
                 }
 
@@ -39,7 +40,7 @@ namespace DocumentDB.ConsoleApp.Service
         public static async Task<List<Template>> GetARMTemplatesAsync()
         {
             List<Template> templates = new List<Template>();
-            var contents = await GithubService.Client.Repository.Content.GetContents(repoOwner, repoName, "/");
+            var contents = await GithubService.Client.Repository.Content.GetContents(RepoOwner, RepoName, "/");
             foreach (RepositoryContent content in contents.Where(c => c.DownloadUrl == null))
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
@@ -66,7 +67,7 @@ namespace DocumentDB.ConsoleApp.Service
                     template.ReadmeLink = await GetReadmeLinkAsync(content.Name);
 
                     template.GitHubPictureProfileLink = await GetProfilePictureLink(template.Author);
-                    //DocumentDB.ConsoleApp.Program.Queue.Enqueue(template);
+                    //TODO DocumentDB.ConsoleApp.Program.Queue.Enqueue(template);
                     
                     templates.Add(template);
                 }
@@ -77,6 +78,7 @@ namespace DocumentDB.ConsoleApp.Service
                     Console.WriteLine(ex.Message);
                 }
             }
+
             return templates;
         }
 
@@ -85,7 +87,7 @@ namespace DocumentDB.ConsoleApp.Service
             Console.ForegroundColor = ConsoleColor.Gray;
             Console.Write("Read file 'metadata.json' from GitHub... ");
 
-            var contents = await Client.Repository.Content.GetContents(repoOwner, repoName, path);
+            var contents = await Client.Repository.Content.GetContents(RepoOwner, RepoName, path);
 
             var metadataJsonFile = contents.FirstOrDefault(c => string.Equals(c.Name, "metadata.json"));
             if (metadataJsonFile == null)
@@ -104,7 +106,7 @@ namespace DocumentDB.ConsoleApp.Service
 
         private static async Task<string> GetReadmeLinkAsync(string path)
         {
-            var contents = await Client.Repository.Content.GetContents(repoOwner, repoName, path);
+            var contents = await Client.Repository.Content.GetContents(RepoOwner, RepoName, path);
 
             var readmeFile = contents.FirstOrDefault(c => string.Equals(Path.GetExtension(c.Name), ".md"));
             return readmeFile.DownloadUrl.AbsoluteUri;
@@ -114,7 +116,7 @@ namespace DocumentDB.ConsoleApp.Service
         {
             bool hasError;
             var files = new List<ScriptFile>();
-            var contents = await Client.Repository.Content.GetContents(repoOwner, repoName, path);
+            var contents = await Client.Repository.Content.GetContents(RepoOwner, RepoName, path);
             foreach (var content in contents.Where(c => c.DownloadUrl != null && Path.GetExtension(c.Name) == ".json" && !string.Equals(c.Name, "metadata.json")))
             {
                 hasError = false;
@@ -124,8 +126,7 @@ namespace DocumentDB.ConsoleApp.Service
                 var file = new ScriptFile();
                 try
                 {
-
-                    file.fileName = content.Name;
+                    file.FileName = content.Name;
                     file.Link = content.DownloadUrl.AbsoluteUri;
                     file.FileContent = await GetContentFromJsonFileAsync(content.DownloadUrl.AbsoluteUri);
                     Console.ForegroundColor = ConsoleColor.Green;
@@ -141,8 +142,11 @@ namespace DocumentDB.ConsoleApp.Service
                 }
 
                 if (!hasError)
+                {
                     files.Add(file);
+                }
             }
+
             return files;
         }
 
@@ -152,7 +156,7 @@ namespace DocumentDB.ConsoleApp.Service
             return user.AvatarUrl;
         }
 
-        private static async Task<Object> GetContentFromJsonFileAsync(string uri)
+        private static async Task<object> GetContentFromJsonFileAsync(string uri)
         {
             var content = await GetStringFile(uri);
             return Newtonsoft.Json.JsonConvert.DeserializeObject(content);

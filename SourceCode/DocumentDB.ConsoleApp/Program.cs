@@ -1,10 +1,10 @@
-﻿using DocumentDB.ConsoleApp.Model;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using DocumentDB.ConsoleApp.Model;
 
 namespace DocumentDB.ConsoleApp
 {
@@ -17,6 +17,7 @@ namespace DocumentDB.ConsoleApp
             Queue = new Queue<Template>();
 
             Thread th = new Thread(new ThreadStart(Run));
+            
             //th.Start();
 
             try
