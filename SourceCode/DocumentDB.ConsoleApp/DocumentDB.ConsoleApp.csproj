@@ -53,14 +53,17 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Model\ARMTemplateFile.cs" />
-    <Compile Include="Model\TemplateFolder.cs" />
+    <Compile Include="Model\ScriptFile.cs" />
+    <Compile Include="Model\Template.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Service\DocumentDBService.cs" />
     <Compile Include="Service\GithubService.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="App.config" />
+    <None Include="App.config">
+      <SubType>Designer</SubType>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>

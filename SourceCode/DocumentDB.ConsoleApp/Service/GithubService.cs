@@ -1,4 +1,5 @@
 ﻿using DocumentDB.ConsoleApp.Model;
+using Newtonsoft.Json.Linq;
 using Octokit;
 using System;
 using System.Collections.Generic;
@@ -35,100 +36,126 @@ namespace DocumentDB.ConsoleApp.Service
             }
         }
 
-        public static async Task<List<ARMTemplateFile>> GetTemplatesFoldersAsync()
+        public static async Task<List<Template>> GetARMTemplatesAsync()
         {
-            List<ARMTemplateFile> templates = new List<ARMTemplateFile>();
+            List<Template> templates = new List<Template>();
             var contents = await GithubService.Client.Repository.Content.GetContents(repoOwner, repoName, "/");
             foreach (RepositoryContent content in contents.Where(c => c.DownloadUrl == null))
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine(string.Format("GET FILES FROM TEMPLATE '{0}'", content.Name));
-                var filesInFolder = await GetFilesAsync(content.Name);
-                templates.AddRange(filesInFolder);
+
+                var template = new Template();
+
+                try
+                {
+                    template.Id = content.Name;
+                    template.Link = content.GitUrl.AbsoluteUri;
+
+                    var metadata = await GetMetadataJsonAsync(content.Name);
+
+                    template.Author = metadata.GetValue("githubUsername").ToString();
+                    template.Description = metadata.GetValue("description").ToString();
+                    template.TemplateUpdated = metadata.GetValue("dateUpdated").ToString();
+                    template.Description = metadata.GetValue("description").ToString();
+                    template.Title = metadata.GetValue("itemDisplayName").ToString();
+
+                    var scriptInTemplates = await GetScriptFilesAsync(content.Name);
+                    template.ScriptFiles = scriptInTemplates.ToArray();
+
+                    template.ReadmeLink = await GetReadmeLinkAsync(content.Name);
+
+                    template.GitHubPictureProfileLink = await GetProfilePictureLink(template.Author);
+                    //DocumentDB.ConsoleApp.Program.Queue.Enqueue(template);
+                    
+                    templates.Add(template);
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("Error!");
+                    Console.WriteLine(ex.Message);
+                }
             }
             return templates;
         }
 
-        private static async Task<List<ARMTemplateFile>> GetFilesAsync(string path)
+        private static async Task<JObject> GetMetadataJsonAsync(string path)
+        {
+            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.Write("Read file 'metadata.json' from GitHub... ");
+
+            var contents = await Client.Repository.Content.GetContents(repoOwner, repoName, path);
+
+            var metadataJsonFile = contents.FirstOrDefault(c => string.Equals(c.Name, "metadata.json"));
+            if (metadataJsonFile == null)
+            {
+                throw new Exception(string.Format("This template no contains metadata.json and not will be load into documentDB"));
+            }
+
+            var content = await GetStringFile(metadataJsonFile.DownloadUrl.AbsoluteUri);
+            var result = JObject.Parse(content);
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("Done!");
+
+            return result;
+        }
+
+        private static async Task<string> GetReadmeLinkAsync(string path)
+        {
+            var contents = await Client.Repository.Content.GetContents(repoOwner, repoName, path);
+
+            var readmeFile = contents.FirstOrDefault(c => string.Equals(Path.GetExtension(c.Name), ".md"));
+            return readmeFile.DownloadUrl.AbsoluteUri;
+        }
+
+        private static async Task<List<ScriptFile>> GetScriptFilesAsync(string path)
         {
             bool hasError;
-            var files = new List<ARMTemplateFile>();
+            var files = new List<ScriptFile>();
             var contents = await Client.Repository.Content.GetContents(repoOwner, repoName, path);
-            foreach (var item in contents.Where(c => c.DownloadUrl != null))
+            foreach (var content in contents.Where(c => c.DownloadUrl != null && Path.GetExtension(c.Name) == ".json" && !string.Equals(c.Name, "metadata.json")))
             {
                 hasError = false;
                 Console.ForegroundColor = ConsoleColor.Gray;
-                Console.Write(string.Format("Read file '{0}' from GitHub... ", item.Name));
+                Console.Write(string.Format("Read file '{0}' from GitHub... ", content.Name));
 
-                var file = new ARMTemplateFile();
-                file.Id = item.Path;
-                file.Folder = path;
-                file.FileName = item.Name;
-                if (Path.GetExtension(item.Name) == ".json")
+                var file = new ScriptFile();
+                try
                 {
-                    try
-                    {
-                        file.FileContent = await GetContentFromJsonFileAsync(item.DownloadUrl.AbsoluteUri);
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine("done!");
-                    }
-                    catch (Exception ex)
-                    {
-                        var baseMessage = ex.GetBaseException();
-                        hasError = true;
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("error!");
-                        Console.WriteLine("{0}, Message: ", ex.Message, baseMessage.Message);
-                    }
 
+                    file.fileName = content.Name;
+                    file.Link = content.DownloadUrl.AbsoluteUri;
+                    file.FileContent = await GetContentFromJsonFileAsync(content.DownloadUrl.AbsoluteUri);
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("done!");
                 }
-                else if (Path.GetExtension(item.Name) == ".txt" || Path.GetExtension(item.Name) == ".md")
+                catch (Exception ex)
                 {
-                    try
-                    {
-                        file.FileContent = await GetContentFromTextFileAsync(item.DownloadUrl.AbsoluteUri);
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine("done!");
-                    }
-                    catch (Exception ex)
-                    {
-                        var baseMessage = ex.GetBaseException();
-                        hasError = true;
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("error!");
-                        Console.WriteLine("{0}, Message: ", ex.Message, baseMessage.Message);
-                    }
+                    var baseMessage = ex.GetBaseException();
+                    hasError = true;
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("error!");
+                    Console.WriteLine("{0}, Message: ", ex.Message, baseMessage.Message);
                 }
-                else
-                {
-                    //TODO Notify that we get an unexpected file
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine("no implemented!");
-                    hasError = true;//flag 
-                }
+
                 if (!hasError)
                     files.Add(file);
-
-
             }
             return files;
+        }
+
+        private static async Task<string> GetProfilePictureLink(string userName)
+        {
+            var user = await githubClient.User.Get(userName);
+            return user.AvatarUrl;
         }
 
         private static async Task<Object> GetContentFromJsonFileAsync(string uri)
         {
             var content = await GetStringFile(uri);
             return Newtonsoft.Json.JsonConvert.DeserializeObject(content);
-        }
-
-        private static async Task<Object> GetContentFromTextFileAsync(string uri)
-        {
-            var content = await GetStringFile(uri);
-            var contentToJson = @"{
-                'encode': 'Base64',
-                'text':'" + Base64Encode(content) + @"',
-            }";
-
-            return Newtonsoft.Json.JsonConvert.DeserializeObject(contentToJson);
         }
 
         private static async Task<string> GetStringFile(string uri)

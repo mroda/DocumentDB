@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 
 namespace DocumentDB.ConsoleApp.Model
 {
+    [Obsolete("now we use 'scriptFile'")]
     public class ARMTemplateFile
     {
         [JsonProperty(PropertyName = "id")]
@@ -15,6 +16,10 @@ namespace DocumentDB.ConsoleApp.Model
         public string Folder { get; set; }
 
         public string FileName { get; set; }
+
+        public bool IsFileContentEncode { get; set; }
+
+        public string Encode { get; set; }
 
         public Object FileContent { get; set; }
     }

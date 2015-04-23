@@ -1,20 +1,29 @@
-﻿using System;
+﻿using DocumentDB.ConsoleApp.Model;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DocumentDB.ConsoleApp
 {
     public class Program
     {
+        public static Queue<Template> Queue { get; set; }
+
         public static void Main(string[] args)
         {
+            Queue = new Queue<Template>();
+
+            Thread th = new Thread(new ThreadStart(Run));
+            //th.Start();
+
             try
             {
-                var templates = Service.GithubService.GetTemplatesFoldersAsync().Result;
-                Service.DocumentDBService.SaveToDocumentDB(templates).Wait();
-            }
+                var templates = Service.GithubService.GetARMTemplatesAsync().Result;
+                Service.DocumentDBService.SaveToDocumentDB(templates);
+             }
             catch (Exception ex)
             {
                 var baseEx = ex.GetBaseException();
@@ -23,6 +32,23 @@ namespace DocumentDB.ConsoleApp
             }
 
             Console.ReadKey();
+        }
+
+        public static void Run()
+        {
+            bool isCompleted = false;
+            while (!isCompleted)
+            {
+                if (Queue.Count > 0)
+                {
+                    var template = Queue.Dequeue();
+                    Service.DocumentDBService.SaveTemplate(template).Wait();
+                }
+                else
+                {
+                    Thread.Sleep(1000);
+                }
+            }
         }
     }
 }

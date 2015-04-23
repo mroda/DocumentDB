@@ -44,69 +44,50 @@ namespace DocumentDB.ConsoleApp.Service
         }
 
 
-        internal static async Task SaveToDocumentDB(List<ARMTemplateFile> templates)
+        internal static void SaveToDocumentDB(List<Template> templates)
         {
-            using (client = new DocumentClient(new Uri(documentDBEndpointUrl), documentDBAuthorizationKey))
+            templates.ForEach( async t => await SaveTemplate(t));
+        }
+
+        public static async Task SaveTemplate(Template template)
+        {
+            try
             {
-                Database database = await GetOrCreateDatabaseAsync(databaseId);
-                DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, collectionId);
-
-                foreach (ARMTemplateFile template in templates)
+                using (client = new DocumentClient(new Uri(documentDBEndpointUrl), documentDBAuthorizationKey))
                 {
-                    try
+                    Database database = await GetOrCreateDatabaseAsync(databaseId);
+                    DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, collectionId);
+
+                    dynamic doc = client.CreateDocumentQuery<Document>(collection.DocumentsLink)
+                        .Where(d => d.Id == template.Id).AsEnumerable()
+                        .FirstOrDefault();
+
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.Write("Saving Template '{0}'... ", template.Id);
+
+                    if (doc == null)
                     {
-                        dynamic doc = client.CreateDocumentQuery<Document>(collection.DocumentsLink)
-                            .Where(d => d.Id == template.Id).AsEnumerable()
-                            .FirstOrDefault();
-
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                        Console.Write("Saving fileID '{0}'... ", template.Id);
-
-                        if (doc == null)
-                        {
-                            //Save a new document 
-                            await client.CreateDocumentAsync(collection.DocumentsLink, template);
-                        }
-                        else
-                        {
-                            //Update exist document
-                            await client.ReplaceDocumentAsync(doc.SelfLink, template);
-                        }
-
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.WriteLine("Done!");
+                        //Save a new document 
+                        await client.CreateDocumentAsync(collection.DocumentsLink, template);
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        var baseError = ex.GetBaseException();
-
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("Error!");
-                        Console.WriteLine("{0}. Message: {1}", ex.Message, baseError.Message);
+                        //Update exist document
+                        await client.ReplaceDocumentAsync(doc.SelfLink, template);
                     }
-                };
 
-                //templates.ForEach(async t =>
-                //    {
-                //        try
-                //        {
-                //            Console.ForegroundColor= ConsoleColor.Gray;
-                //            Console.Write("Saving fileID '{0}'... ", t.Id);
-                //            Document created = await client.CreateDocumentAsync(collection.DocumentsLink, t);
-                //            Console.ForegroundColor= ConsoleColor.Green;
-                //            Console.WriteLine("Done!");
-                //        }
-                //        catch (Exception ex)
-                //        {
-                //            var baseError = ex.GetBaseException();
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("Done!");
+                }
+            }
+            catch (Exception ex)
+            {
+                var baseError = ex.GetBaseException();
 
-                //            Console.ForegroundColor = ConsoleColor.Red;
-                //            Console.WriteLine("Error!");
-                //            Console.WriteLine("{0}. Message: {1}", ex.Message, baseError.Message);
-                //        }
-
-                //    });
-            };
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Error!");
+                Console.WriteLine("{0}. Message: {1}", ex.Message, baseError.Message);
+            }
         }
     }
 }
