@@ -46,42 +46,32 @@ namespace DocumentDB.ConsoleApp.Services
             return collection;
         }
 
-        internal static void SaveToDocumentDB(List<Template> templates)
-        {
-            templates.ForEach(async t => await SaveTemplate(t));
-        }
-
-        public static async Task SaveTemplate(Template template)
+        public static async Task SaveTemplate(Template template, DocumentCollection collection, Database database)
         {
             try
             {
-                using (client = new DocumentClient(new Uri(DocumentDBEndpointUrl), DocumentDBAuthorizationKey))
+                dynamic doc = client.CreateDocumentQuery<Document>(collection.DocumentsLink)
+                    .Where(d => d.Id == template.Id).AsEnumerable()
+                    .FirstOrDefault();
+
+                Console.ForegroundColor = ConsoleColor.Gray;
+
+                if (doc == null)
                 {
-                    Database database = await GetOrCreateDatabaseAsync(DatabaseId);
-                    DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, CollectionId);
-
-                    dynamic doc = client.CreateDocumentQuery<Document>(collection.DocumentsLink)
-                        .Where(d => d.Id == template.Id).AsEnumerable()
-                        .FirstOrDefault();
-
-                    Console.ForegroundColor = ConsoleColor.Gray;
-
-                    if (doc == null)
-                    {
-                        ////Save a new document 
-                        Console.Write("Saving Template '{0}'... ", template.Id);
-                        await client.CreateDocumentAsync(collection.DocumentsLink, template);
-                    }
-                    else
-                    {
-                        ////Update exist document
-                        Console.Write("Updating Template '{0}'... ", template.Id);
-                        await client.ReplaceDocumentAsync(doc.SelfLink, template);
-                    }
-
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine("Done!");
+                    ////Save a new document 
+                    Console.Write("Saving Template '{0}'... ", template.Id);
+                    await client.CreateDocumentAsync(collection.DocumentsLink, template);
                 }
+                else
+                {
+                    ////Update exist document
+                    Console.Write("Updating Template '{0}'... ", template.Id);
+                    await client.ReplaceDocumentAsync(doc.SelfLink, template);
+                }
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("Done!");
+
             }
             catch (Exception ex)
             {
@@ -118,8 +108,6 @@ namespace DocumentDB.ConsoleApp.Services
                 Database database = await GetOrCreateDatabaseAsync(DatabaseId);
                 DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, CollectionId);
 
-                dynamic firstTemplate;
-
                 dynamic documents = client.CreateDocumentQuery<Document>(collection.DocumentsLink)
                            .ToList();
 
@@ -128,15 +116,36 @@ namespace DocumentDB.ConsoleApp.Services
                     var template = (Template)item;
                     Console.WriteLine(template.Id);
                     Console.WriteLine(template.Author);
-                   
-                    //get value in metadataJson
-                    var scriptFile = template.ScriptFiles.FirstOrDefault(sf => sf.FileName.Equals("azuredeploy.json", StringComparison.InvariantCultureIgnoreCase));
-                    var azureDeploy = Newtonsoft.Json.Linq.JObject.Parse(scriptFile.FileContent.ToString());
 
+                    ////get parameters in azuredeploy.json
+                    var scriptFileEntity = template.ScriptFiles.FirstOrDefault(sf => sf.FileName.Equals("azuredeploy.json", StringComparison.InvariantCultureIgnoreCase));
+                    var azureDeploy = Newtonsoft.Json.Linq.JObject.Parse(scriptFileEntity.FileContent.ToString());
+
+                    var parameters = Newtonsoft.Json.Linq.JObject.Parse(azureDeploy.GetValue("parameters").ToString());
+                    foreach (var prop in parameters.Properties())
+                    {
+                        var name = prop.Name;
+                        var value = prop.Value;
+                    }
+                    
                     Console.WriteLine("version " + azureDeploy.GetValue("contentVersion").ToString());
-
                 }
 
+            }
+        }
+
+
+        internal static async Task SaveTemplatesAsync()
+        {
+            using (client = new DocumentClient(new Uri(DocumentDBEndpointUrl), DocumentDBAuthorizationKey))
+            {
+                Database database = await GetOrCreateDatabaseAsync(DatabaseId);
+                DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, CollectionId);
+
+                while (Program.QueueTemplates.Count>0)
+                {
+                    await SaveTemplate(Program.QueueTemplates.Dequeue(), collection, database);
+                }
             }
         }
     }

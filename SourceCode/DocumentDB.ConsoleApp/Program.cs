@@ -5,53 +5,47 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using DocumentDB.ConsoleApp.Model;
+using DocumentDB.ConsoleApp.Services;
 
 namespace DocumentDB.ConsoleApp
 {
     public class Program
     {
-        public static Queue<Template> Queue { get; set; }
+        private static bool isStoped = false;
+
+        public static Queue<Template> QueueTemplates { get; set; }
 
         public static void Main(string[] args)
         {
-            Queue = new Queue<Template>();
+            QueueTemplates = new Queue<Template>();
 
-            //Thread th = new Thread(new ThreadStart(Run));
-            //th.Start();
-
-            try
-            {
-                Services.DocumentDBService.ListTemplates().Wait();
-                var templates = Services.GithubService.GetARMTemplatesAsync().Result;
-                Services.DocumentDBService.SaveToDocumentDB(templates);
-
-             }
-            catch (Exception ex)
-            {
-                var baseEx = ex.GetBaseException();
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Error: {0}, Message: {1}", ex.Message, baseEx.Message);
-            }
-
+            LoadTemplatesToDocumentDB();
             Console.ReadKey();
         }
 
-        public static void Run()
+        public static void LoadTemplatesToDocumentDB()
         {
-            bool isCompleted = false;
-            while (!isCompleted)
+            while (!isStoped)
             {
-                Console.WriteLine(DateTime.Now.ToString());
-                if (Queue.Count > 0)
+                try
                 {
-                    var template = Queue.Dequeue();
-                    Services.DocumentDBService.SaveTemplate(template).Wait();
+                    GithubService.ReadARMTemplatesAsync().Wait();
+                    DocumentDBService.SaveTemplatesAsync().Wait();
                 }
-                else
+                catch (Exception ex)
                 {
-                    Thread.Sleep(1000);
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("Unexpected error: {0}", ex.Message);
+                }
+                finally
+                {
+                    ////Refreash templates each hour
+                    Thread.Sleep(3600000);
                 }
             }
+
         }
+
+       
     }
 }
