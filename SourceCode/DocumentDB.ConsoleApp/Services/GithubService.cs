@@ -10,7 +10,7 @@ using DocumentDB.ConsoleApp.Model;
 using Newtonsoft.Json.Linq;
 using Octokit;
 
-namespace DocumentDB.ConsoleApp.Service
+namespace DocumentDB.ConsoleApp.Services
 {
     public static class GithubService
     {
@@ -43,32 +43,39 @@ namespace DocumentDB.ConsoleApp.Service
             var contents = await GithubService.Client.Repository.Content.GetContents(RepoOwner, RepoName, "/");
             foreach (RepositoryContent content in contents.Where(c => c.DownloadUrl == null))
             {
+                var filesInFolder = await Client.Repository.Content.GetContents(RepoOwner, RepoName, content.Name);
+
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine(string.Format("GET FILES FROM TEMPLATE '{0}'", content.Name));
+                Console.WriteLine(string.Format("READING FOLDER '{0}'...", content.Name));
+
 
                 var template = new Template();
-
                 try
                 {
+                    CheckIsValidTemplate(filesInFolder);
+
+                    var metadata = await GetMetadataJsonAsync(filesInFolder);
+                    var scriptInTemplates = await GetScriptFilesAsync(filesInFolder);
+
                     template.Id = content.Name;
                     template.Link = content.GitUrl.AbsoluteUri;
-
-                    var metadata = await GetMetadataJsonAsync(content.Name);
-
                     template.Author = metadata.GetValue("githubUsername").ToString();
-                    template.Description = metadata.GetValue("description").ToString();
                     template.TemplateUpdated = metadata.GetValue("dateUpdated").ToString();
-                    template.Description = metadata.GetValue("description").ToString();
-                    template.Title = metadata.GetValue("itemDisplayName").ToString();
+                    template.Title = metadata.GetValue("itemDisplayName") != null
+                        ? metadata.GetValue("itemDisplayName").ToString()
+                        : String.Empty;
+                    template.Description = metadata.GetValue("description") != null
+                       ? metadata.GetValue("description").ToString()
+                       : string.Empty;
 
-                    var scriptInTemplates = await GetScriptFilesAsync(content.Name);
                     template.ScriptFiles = scriptInTemplates.ToArray();
 
-                    template.ReadmeLink = await GetReadmeLinkAsync(content.Name);
+                    template.ReadmeLink = GetReadmeLink(filesInFolder) ?? string.Empty;
 
                     template.GitHubPictureProfileLink = await GetProfilePictureLink(template.Author);
-                    //TODO DocumentDB.ConsoleApp.Program.Queue.Enqueue(template);
                     
+                    //DocumentDB.ConsoleApp.Program.Queue.Enqueue(template);
+
                     templates.Add(template);
                 }
                 catch (Exception ex)
@@ -82,20 +89,30 @@ namespace DocumentDB.ConsoleApp.Service
             return templates;
         }
 
-        private static async Task<JObject> GetMetadataJsonAsync(string path)
+        private static void CheckIsValidTemplate(IReadOnlyList<RepositoryContent> files)
+        {
+            var metadataFile = files.FirstOrDefault(c => c.Name.Equals("metadata.json", StringComparison.InvariantCultureIgnoreCase));
+            var azuredeployFile = files.FirstOrDefault(c => c.Name.Equals("azuredeploy.json", StringComparison.InvariantCultureIgnoreCase));
+            var azuredeployParametersFile = files.FirstOrDefault(c => c.Name.Equals("azuredeploy-parameters.json", StringComparison.InvariantCultureIgnoreCase));
+
+            if (metadataFile == null || azuredeployFile == null || azuredeployParametersFile == null)
+            {
+                throw new Exception("Not contains the requiered files to be considered a valid ARM Template");
+            }
+        }
+
+        private static async Task<JObject> GetMetadataJsonAsync(IReadOnlyList<RepositoryContent> files)
         {
             Console.ForegroundColor = ConsoleColor.Gray;
             Console.Write("Read file 'metadata.json' from GitHub... ");
 
-            var contents = await Client.Repository.Content.GetContents(RepoOwner, RepoName, path);
-
-            var metadataJsonFile = contents.FirstOrDefault(c => string.Equals(c.Name, "metadata.json"));
+            var metadataJsonFile = files.FirstOrDefault(c => string.Equals(c.Name, "metadata.json"));
             if (metadataJsonFile == null)
             {
                 throw new Exception(string.Format("This template no contains metadata.json and not will be load into documentDB"));
             }
 
-            var content = await GetStringFile(metadataJsonFile.DownloadUrl.AbsoluteUri);
+            var content = await GetStringFileAsync(metadataJsonFile.DownloadUrl.AbsoluteUri);
             var result = JObject.Parse(content);
 
             Console.ForegroundColor = ConsoleColor.Green;
@@ -104,31 +121,37 @@ namespace DocumentDB.ConsoleApp.Service
             return result;
         }
 
-        private static async Task<string> GetReadmeLinkAsync(string path)
+        private static string GetReadmeLink(IReadOnlyList<RepositoryContent> files)
         {
-            var contents = await Client.Repository.Content.GetContents(RepoOwner, RepoName, path);
+            var readmeFile = files.FirstOrDefault(c => string.Equals(Path.GetExtension(c.Name), ".md"));
+            if (readmeFile != null)
+            {
+                return readmeFile.DownloadUrl.AbsoluteUri;
+            }
+            else
+            {
+                return null;
+            }
 
-            var readmeFile = contents.FirstOrDefault(c => string.Equals(Path.GetExtension(c.Name), ".md"));
-            return readmeFile.DownloadUrl.AbsoluteUri;
         }
 
-        private static async Task<List<ScriptFile>> GetScriptFilesAsync(string path)
+        private static async Task<List<ScriptFile>> GetScriptFilesAsync(IReadOnlyList<RepositoryContent> files)
         {
             bool hasError;
-            var files = new List<ScriptFile>();
-            var contents = await Client.Repository.Content.GetContents(RepoOwner, RepoName, path);
-            foreach (var content in contents.Where(c => c.DownloadUrl != null && Path.GetExtension(c.Name) == ".json" && !string.Equals(c.Name, "metadata.json")))
+            var scriptfiles = new List<ScriptFile>();
+            foreach (var content in files.Where(c => c.DownloadUrl != null && Path.GetExtension(c.Name) == ".json" && !string.Equals(c.Name, "metadata.json")))
             {
                 hasError = false;
-                Console.ForegroundColor = ConsoleColor.Gray;
-                Console.Write(string.Format("Read file '{0}' from GitHub... ", content.Name));
-
+               
                 var file = new ScriptFile();
                 try
                 {
                     file.FileName = content.Name;
                     file.Link = content.DownloadUrl.AbsoluteUri;
                     file.FileContent = await GetContentFromJsonFileAsync(content.DownloadUrl.AbsoluteUri);
+
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.Write(string.Format("Read file '{0}' from GitHub... ", content.Name));
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine("done!");
                 }
@@ -136,6 +159,8 @@ namespace DocumentDB.ConsoleApp.Service
                 {
                     var baseMessage = ex.GetBaseException();
                     hasError = true;
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.Write(string.Format("Read file '{0}' from GitHub... ", content.Name));
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("error!");
                     Console.WriteLine("{0}, Message: ", ex.Message, baseMessage.Message);
@@ -143,11 +168,11 @@ namespace DocumentDB.ConsoleApp.Service
 
                 if (!hasError)
                 {
-                    files.Add(file);
+                    scriptfiles.Add(file);
                 }
             }
 
-            return files;
+            return scriptfiles;
         }
 
         private static async Task<string> GetProfilePictureLink(string userName)
@@ -158,11 +183,11 @@ namespace DocumentDB.ConsoleApp.Service
 
         private static async Task<object> GetContentFromJsonFileAsync(string uri)
         {
-            var content = await GetStringFile(uri);
+            var content = await GetStringFileAsync(uri);
             return Newtonsoft.Json.JsonConvert.DeserializeObject(content);
         }
 
-        private static async Task<string> GetStringFile(string uri)
+        private static async Task<string> GetStringFileAsync(string uri)
         {
             using (var httpClient = new HttpClient())
             {

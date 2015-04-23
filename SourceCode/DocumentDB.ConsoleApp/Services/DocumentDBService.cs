@@ -9,7 +9,7 @@ using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.Documents.Linq;
 
-namespace DocumentDB.ConsoleApp.Service
+namespace DocumentDB.ConsoleApp.Services
 {
     public class DocumentDBService
     {
@@ -65,16 +65,17 @@ namespace DocumentDB.ConsoleApp.Service
                         .FirstOrDefault();
 
                     Console.ForegroundColor = ConsoleColor.Gray;
-                    Console.Write("Saving Template '{0}'... ", template.Id);
 
                     if (doc == null)
                     {
                         ////Save a new document 
+                        Console.Write("Saving Template '{0}'... ", template.Id);
                         await client.CreateDocumentAsync(collection.DocumentsLink, template);
                     }
                     else
                     {
                         ////Update exist document
+                        Console.Write("Updating Template '{0}'... ", template.Id);
                         await client.ReplaceDocumentAsync(doc.SelfLink, template);
                     }
 
@@ -89,6 +90,53 @@ namespace DocumentDB.ConsoleApp.Service
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Error!");
                 Console.WriteLine("{0}. Message: {1}", ex.Message, baseError.Message);
+            }
+        }
+
+        public static async Task DeleteTemplate(string id)
+        {
+            using (client = new DocumentClient(new Uri(DocumentDBEndpointUrl), DocumentDBAuthorizationKey))
+            {
+                Database database = await GetOrCreateDatabaseAsync(DatabaseId);
+                DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, CollectionId);
+
+                dynamic doc = client.CreateDocumentQuery<Document>(collection.DocumentsLink)
+                           .Where(d => d.Id == id).AsEnumerable()
+                           .FirstOrDefault();
+
+                if (doc != null)
+                {
+                    var docDeleted = await client.DeleteDocumentAsync(doc.SelfLink);
+                }
+            }
+        }
+
+        public static async Task ListTemplates()
+        {
+            using (client = new DocumentClient(new Uri(DocumentDBEndpointUrl), DocumentDBAuthorizationKey))
+            {
+                Database database = await GetOrCreateDatabaseAsync(DatabaseId);
+                DocumentCollection collection = await GetOrCreateCollectionAsync(database.CollectionsLink, CollectionId);
+
+                dynamic firstTemplate;
+
+                dynamic documents = client.CreateDocumentQuery<Document>(collection.DocumentsLink)
+                           .ToList();
+
+                foreach (var item in documents)
+                {
+                    var template = (Template)item;
+                    Console.WriteLine(template.Id);
+                    Console.WriteLine(template.Author);
+                   
+                    //get value in metadataJson
+                    var scriptFile = template.ScriptFiles.FirstOrDefault(sf => sf.FileName.Equals("azuredeploy.json", StringComparison.InvariantCultureIgnoreCase));
+                    var azureDeploy = Newtonsoft.Json.Linq.JObject.Parse(scriptFile.FileContent.ToString());
+
+                    Console.WriteLine("version " + azureDeploy.GetValue("contentVersion").ToString());
+
+                }
+
             }
         }
     }

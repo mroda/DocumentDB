@@ -16,14 +16,15 @@ namespace DocumentDB.ConsoleApp
         {
             Queue = new Queue<Template>();
 
-            Thread th = new Thread(new ThreadStart(Run));
-            
+            //Thread th = new Thread(new ThreadStart(Run));
             //th.Start();
 
             try
             {
-                var templates = Service.GithubService.GetARMTemplatesAsync().Result;
-                Service.DocumentDBService.SaveToDocumentDB(templates);
+                Services.DocumentDBService.ListTemplates().Wait();
+                var templates = Services.GithubService.GetARMTemplatesAsync().Result;
+                Services.DocumentDBService.SaveToDocumentDB(templates);
+
              }
             catch (Exception ex)
             {
@@ -40,10 +41,11 @@ namespace DocumentDB.ConsoleApp
             bool isCompleted = false;
             while (!isCompleted)
             {
+                Console.WriteLine(DateTime.Now.ToString());
                 if (Queue.Count > 0)
                 {
                     var template = Queue.Dequeue();
-                    Service.DocumentDBService.SaveTemplate(template).Wait();
+                    Services.DocumentDBService.SaveTemplate(template).Wait();
                 }
                 else
                 {
